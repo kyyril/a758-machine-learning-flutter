@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image/image.dart' as img;
 import 'package:tflite_flutter/tflite_flutter.dart';
+import 'package:submission/service/food_classifier_service.dart';
 import 'package:submission/ui/result_page.dart';
 
 class CameraStreamPage extends StatefulWidget {
@@ -22,6 +23,7 @@ class _CameraStreamPageState extends State<CameraStreamPage> {
   String? _liveLabel;
   double? _liveConfidence;
   String? _error;
+  bool _isDownloadingModel = false;
 
   // Temp files for isolate access
   String? _modelPath;
@@ -40,21 +42,23 @@ class _CameraStreamPageState extends State<CameraStreamPage> {
 
   Future<void> _loadModelAssets() async {
     try {
+      if (mounted) setState(() => _isDownloadingModel = true);
+
+      // Download / cache model via FoodClassifierService
+      _modelPath = await FoodClassifierService.instance.ensureModel();
+
       final tempDir = Directory.systemTemp;
-
-      final modelData = await rootBundle.load('assets/1.tflite');
-      final modelFile = File('${tempDir.path}/food_model.tflite');
-      await modelFile.writeAsBytes(modelData.buffer.asUint8List());
-      _modelPath = modelFile.path;
-
       final labelsData = await rootBundle.loadString('assets/probability-labels-en.txt');
       final labelsFile = File('${tempDir.path}/food_labels.txt');
       await labelsFile.writeAsString(labelsData);
       _labelsPath = labelsFile.path;
+
+      if (mounted) setState(() => _isDownloadingModel = false);
     } catch (e) {
       if (mounted) setState(() => _error = 'Gagal memuat model: $e');
     }
   }
+
 
   Future<void> _initCamera() async {
     try {
@@ -165,25 +169,38 @@ class _CameraStreamPageState extends State<CameraStreamPage> {
         title: const Text('Live Scan', style: TextStyle(fontWeight: FontWeight.bold)),
         centerTitle: true,
       ),
-      body: _isInitialized
-          ? Stack(
-              children: [
-                // Camera preview
-                Center(child: CameraPreview(_cameraController!)),
-                // Overlay
-                Positioned(
-                  bottom: 0,
-                  left: 0,
-                  right: 0,
-                  child: _LiveOverlay(
-                    label: _liveLabel,
-                    confidence: _liveConfidence,
-                    onCapture: _captureAndAnalyze,
+      body: _isDownloadingModel
+          ? const Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircularProgressIndicator(color: Colors.white),
+                  SizedBox(height: 16),
+                  Text(
+                    'Mengunduh model AI...\n(hanya sekali)',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.white70, fontSize: 14),
                   ),
-                ),
-              ],
+                ],
+              ),
             )
-          : const Center(child: CircularProgressIndicator(color: Colors.white)),
+          : _isInitialized
+              ? Stack(
+                  children: [
+                    Center(child: CameraPreview(_cameraController!)),
+                    Positioned(
+                      bottom: 0,
+                      left: 0,
+                      right: 0,
+                      child: _LiveOverlay(
+                        label: _liveLabel,
+                        confidence: _liveConfidence,
+                        onCapture: _captureAndAnalyze,
+                      ),
+                    ),
+                  ],
+                )
+              : const Center(child: CircularProgressIndicator(color: Colors.white)),
     );
   }
 }

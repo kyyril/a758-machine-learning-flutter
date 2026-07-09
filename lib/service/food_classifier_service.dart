@@ -1,8 +1,14 @@
 import 'dart:io';
 import 'dart:isolate';
 import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
 import 'package:image/image.dart' as img;
+import 'package:path_provider/path_provider.dart';
 import 'package:tflite_flutter/tflite_flutter.dart';
+
+/// URL model TFLite — disimpan di GitHub Releases agar tidak melebihi batas aset 5 MB
+const _modelUrl =
+    'https://github.com/kyyril/a758-machine-learning-flutter/releases/download/v1.0.0/1.tflite';
 
 class FoodClassification {
   final String label;
@@ -82,15 +88,30 @@ class FoodClassifierService {
   FoodClassifierService._();
   static final FoodClassifierService instance = FoodClassifierService._();
 
+  /// Download model dari GitHub Releases jika belum ada di cache lokal.
+  /// Public agar bisa diakses oleh halaman lain (mis. CameraStreamPage).
+  Future<String> ensureModel() async {
+    final appDir = await getApplicationDocumentsDirectory();
+    final modelFile = File('${appDir.path}/food_model.tflite');
+    if (!modelFile.existsSync()) {
+      // Download model dari GitHub Releases
+      final response = await http.get(Uri.parse(_modelUrl));
+      if (response.statusCode != 200) {
+        throw Exception('Gagal mengunduh model (HTTP ${response.statusCode})');
+      }
+      await modelFile.writeAsBytes(response.bodyBytes);
+    }
+    return modelFile.path;
+  }
+
   /// Runs inference on a background Isolate to keep UI responsive.
   Future<List<FoodClassification>> classify(String imagePath) async {
-    // Write model and labels to temp files (Isolates cannot access Flutter assets)
     final tempDir = Directory.systemTemp;
 
-    final modelData = await rootBundle.load('assets/1.tflite');
-    final modelFile = File('${tempDir.path}/food_model.tflite');
-    await modelFile.writeAsBytes(modelData.buffer.asUint8List());
+    // Model: download jika belum ada, lalu cache
+    final modelPath = await ensureModel();
 
+    // Labels: tetap dari asset (ukuran < 25 KB)
     final labelsData = await rootBundle.loadString('assets/probability-labels-en.txt');
     final labelsFile = File('${tempDir.path}/food_labels.txt');
     await labelsFile.writeAsString(labelsData);
@@ -99,7 +120,7 @@ class FoodClassifierService {
     await Isolate.spawn(
       _inferenceIsolate,
       _IsolateMessage(
-        modelPath: modelFile.path,
+        modelPath: modelPath,
         labelsPath: labelsFile.path,
         imagePath: imagePath,
         sendPort: receivePort.sendPort,

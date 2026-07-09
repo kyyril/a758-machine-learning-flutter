@@ -21,6 +21,7 @@ dependencies:
   firebase_core: ^4.1.1
   firebase_ml_model_downloader: ^0.4.0+2
   http: ^1.2.2
+  path_provider: ^2.1.5
   google_generative_ai: ^0.4.6
   flutter_markdown: ^0.7.6+2
 
@@ -33,7 +34,6 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
-    - assets/1.tflite
     - assets/probability-labels-en.txt
     - assets/probability-labels.txt
 
